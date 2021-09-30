@@ -1,0 +1,129 @@
+---
+title: "Buckets Model Daily Modeling"
+author: "Nick R. Bachelder"
+date: "9/10/2021"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(tidyr)
+library(hrbrthemes)
+library(stringr)
+library(randomForest)
+require(dplyr)
+library(MASS)
+library(knitr)
+library(kableExtra)
+library(mvtnorm)
+library(scales)
+
+predict_df_10 <- read.csv('/Users/nickbachelder/Buckets Model/predictdf_10') %>% dplyr::select(-X)
+final_reg_season_model <- readRDS("/Users/nickbachelder/Buckets Model/final_reg_season_model.rds")
+final_playoff_model <- readRDS("/Users/nickbachelder/Buckets Model/final_playoff_model.rds")
+upcoming_games <- read.csv('/Users/nickbachelder/Buckets Model/upcoming_games') %>% dplyr::select(-X)
+NBAgamesC <- read.csv('/Users/nickbachelder/Buckets Model/NBAgamesC') %>% dplyr::select(-X)
+curr_inj <- read.csv('/Users/nickbachelder/Buckets Model/curr_inj') %>% dplyr::select(-X)
+```
+
+```{r}
+data_for_means = data.frame(predict_df_10)
+
+predict_today <- read.csv('/Users/nickbachelder/Buckets Model/daily_data') %>% dplyr::select(-X)
+predict_today <- predict_today[names(predict_df_10)] %>% mutate(ROAD_WIN_P_A = as.numeric(0))
+predict_today
+```
+
+```{r}
+means <- colMeans(data_for_means)
+sds <- apply(data_for_means,2,sd)
+
+predict_today_scaled <-sweep(predict_today, 2, means, "-")
+predict_today_scaled <-sweep(predict_today_scaled, 2, sds, "/")
+predict_today_scaled
+```
+
+
+```{r}
+library(DT)
+prob_home_win <- predict(final_reg_season_model, newdata = predict_today_scaled, type = 'prob')$Yes
+upcoming_games_pred <- upcoming_games %>% mutate(p_home_win = round(prob_home_win, 2)) %>% 
+  mutate(predicted = ifelse(p_home_win > 0.5, sub('.*\\ ', '', Home.Team), sub('.*\\ ','', Away.Team)), probability = ifelse(p_home_win > 0.5, p_home_win, 1 - p_home_win)) %>%
+  dplyr::select(Home.Team, Away.Team, GAME_DATE_H, predicted, probability) 
+
+upcoming_games_table <- datatable(upcoming_games_pred, class = 'cell-border stripe')
+
+upcoming_games_table
+
+write.csv(upcoming_games_pred, '/Users/nickbachelder/Buckets Model/upcoming_games_pred')
+```
+
+```{r}
+matchups <- read.csv('/Users/nickbachelder/Buckets Model/matchups') %>% dplyr::select(-X)
+labels <- matchups$Matchup
+matchups <- matchups[names(predict_df_10)] %>% mutate(ROAD_WIN_P_A = as.numeric(0))
+predict_matchup_scaled <-sweep(matchups, 2, means, "-")
+predict_matchup_scaled <-sweep(predict_matchup_scaled, 2, sds, "/")
+predict_matchup_scaled$Matchup <- labels
+
+
+predict_matchup_scaled %>% filter(Matchup == 'BKN@LAL')
+```
+
+```{r}
+library(viridis)
+library(janitor)
+library(formattable)
+
+splot <- data.frame(t(predict_matchup_scaled %>% dplyr::select(PTS_H, PTS_A, AST_H, AST_A, REB_H, REB_A, FG_P_H, FG_P_A, FG_P3_H, FG_P3_A, FT_P_H, FT_P_A, AVG_PTS_ALLOWED_A, AVG_PTS_ALLOWED_H, TEAM_PLAYOFF_GAMES_P5_H, TEAM_PLAYOFF_GAMES_P5_A,  Matchup) %>%
+  filter(Matchup == 'BOS@ATL') %>% 
+  dplyr::select(-Matchup) %>% 
+  rename(FG3_P_H = FG_P3_H, FG3_P_A = FG_P3_A) %>% 
+  pivot_longer(cols = everything()) %>%  
+  mutate(group = sub("\\_.*", "", name)) %>% 
+  mutate(value = pnorm(value)*100) %>%
+  mutate(team = paste(ifelse(str_sub(name, -1) == 'H', 'ATL', 'BOS'))) %>% select(-name) %>%
+  pivot_wider(id_cols = team, names_from = group)  %>%
+    mutate(AVG = 100 - AVG)
+  %>% rename(
+    'FG Percent' = FG,
+    'FT Percent' = FT,
+    '3pt FG Percent' = FT,
+    'PTS Allowed' = AVG,
+    'Player Experience' = TEAM
+  )
+  )) %>%
+  row_to_names(row_number = 1) %>% mutate_if(is.numeric, round, digits=2) 
+
+
+brks1 <- seq(0, 100, by = 5)
+clrs1 <- viridis::magma(n=length(brks1)+1, alpha=.2, direction = 1)
+
+
+
+formattable(splot, lapply(1:nrow(splot), function(row) {
+  area(row, col = c(1,2)) ~ color_bar("lightblue", function(x){x/100} ) } ) ) 
+```
+
+```{r}
+library(formulaic)
+a <- 'BOS'
+
+add.backtick(a, include.backtick = 'all')
+
+```
+
+
+
+
+
+
+  %>% rename(
+    'FG Percent' = FG,
+    'FT Percent' = FT,
+    '3pt FG Percent' = FT,
+    'PTS Allowed' = AVG,
+    'Player Experience' = TEAM
+  )
